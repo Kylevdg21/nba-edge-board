@@ -1,0 +1,1464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NBA Edge Board</title>
+<link rel="stylesheet" href="static/theme.css">
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="static/dash.js"></script>
+</head>
+<body>
+<div id="dash-root">
+<style>
+.nb { font-family: var(--font-anthropic-sans); display: flex; flex-direction: column; gap: var(--cds-gap-lg); }
+.nb-head { display: flex; flex-direction: column; gap: var(--cds-gap-xs); }
+.nb-head h1 { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; text-wrap: balance; }
+.nb-sub { margin: 0; font-size: var(--cds-font-size-body); }
+.nb-note { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); line-height: 1.5; max-width: 72ch; }
+.nb-tabs { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs); border-bottom: 1px solid var(--color-border-line); }
+.nb-tab { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  padding: var(--cds-pad-sm) var(--cds-pad-md); font: inherit; color: var(--color-fg-muted); cursor: pointer; }
+.nb-tab:hover { color: var(--color-fg); }
+.nb-tab[aria-selected="true"] { color: var(--color-fg); border-bottom-color: var(--color-fg); }
+.nb-tab:focus-visible, .nb-sort:focus-visible, .nb-chip:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+.nb-page { display: flex; flex-direction: column; gap: var(--cds-gap-md); }
+.nb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--cds-gap-md); }
+.nb-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius);
+  padding: var(--cds-pad-lg); display: flex; flex-direction: column; gap: var(--cds-gap-md); min-width: 0; }
+.nb-card h2 { margin: 0; font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+.nb-cardhead { display: flex; flex-direction: column; gap: var(--cds-gap-xs); }
+.nb-wrap { overflow: auto; max-height: 36rem; }
+.nb-t { border-collapse: collapse; width: 100%; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+.nb-t th { position: sticky; top: 0; z-index: 1; background: var(--color-panel); text-align: left; white-space: nowrap;
+  color: var(--color-fg-muted); font-weight: var(--cds-font-weight-medium); padding: var(--cds-pad-xs) var(--cds-pad-sm);
+  border-bottom: 1px solid var(--color-border-line); }
+.nb-t td { padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+.nb-t .num { text-align: right; }
+.nb-t td.txt { white-space: normal; min-width: 16rem; color: var(--color-fg-muted); }
+.nb-t td.strong { font-weight: var(--cds-font-weight-medium); }
+.nb-sort { all: unset; cursor: pointer; }
+.nb-sort::after { content: ""; margin-left: 4px; }
+th[aria-sort="ascending"] .nb-sort::after { content: "↑"; }
+th[aria-sort="descending"] .nb-sort::after { content: "↓"; }
+.pill { display: inline-block; padding: 0 var(--cds-pad-sm); border-radius: 999px; border: 1px solid currentColor; line-height: 1.6; }
+.pill.g-Play { color: var(--color-ok); }
+.pill.g-Lean { color: var(--color-fg); border-style: dashed; }
+.pill.g-Check { color: var(--color-warn); }
+.pill.g-Pass { color: var(--color-fg-muted); border-color: transparent; padding: 0; }
+.pill.g-Out { color: var(--color-bad); }
+.pill.g-Won { color: var(--color-ok); }
+.pill.g-Lost { color: var(--color-bad); }
+.pill.g-Push, .pill.g-Void { color: var(--color-fg-muted); }
+.pill.g-Pending { color: var(--color-fg-muted); border-style: dashed; }
+.nb-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: var(--cds-gap-md); }
+.nb-tile { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius);
+  padding: var(--cds-pad-md) var(--cds-pad-lg); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nb-tile .k { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.nb-tile .v { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; }
+.nb-tile .s { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.pill.g-Questionable, .pill.g-Day-To-Day, .pill.g-Doubtful { color: var(--color-warn); }
+.up { color: var(--color-ok); }
+.down { color: var(--color-bad); }
+.muted { color: var(--color-fg-muted); }
+.nb-controls { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: flex-end; }
+.nb-field { display: flex; flex-direction: column; gap: 2px; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); min-width: 0; }
+.nb-field input, .nb-field select { font: inherit; font-size: var(--cds-font-size-body); color: var(--color-fg); background: var(--color-bg);
+  border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-xs) var(--cds-pad-sm); min-width: 0; }
+.nb-field input[type="number"] { width: 6.5rem; }
+.nb-field.grow { flex: 1 1 12rem; }
+.nb-chip { appearance: none; font: inherit; font-size: var(--cds-font-size-caption); cursor: pointer; color: var(--color-fg-muted);
+  background: none; border: 1px solid var(--color-border-line); border-radius: 999px; padding: 2px var(--cds-pad-sm); }
+.nb-chip[aria-pressed="true"] { color: var(--color-fg); border-color: var(--color-fg); }
+.nb-out { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: var(--cds-gap-sm); }
+.nb-stat { display: flex; flex-direction: column; gap: 2px; }
+.nb-stat .k { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.nb-stat .v { font-family: var(--font-anthropic-serif); font-size: var(--cds-font-size-heading); font-variant-numeric: tabular-nums; }
+.nb-chart { position: relative; min-height: 8rem; }
+.nb-chart svg text { fill: var(--color-fg-muted); font-size: var(--cds-font-size-caption); font-family: var(--font-anthropic-sans); }
+.nb-chart svg text.lbl { fill: var(--color-fg); }
+.nb-legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.nb-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.sw.tick { width: 2px; height: 12px; border-radius: 0; background: var(--color-fg); }
+.nb-tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border);
+  border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm);
+  font-size: var(--cds-font-size-caption); white-space: nowrap; z-index: 2; }
+.nb-tip .t { color: var(--cds-text-secondary); }
+.nb-fail { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 6rem; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.nb-fail::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: var(--color-bad); }
+.nb-empty { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); padding: var(--cds-pad-md) 0; }
+.nb-method { display: flex; flex-direction: column; gap: var(--cds-gap-sm); font-size: var(--cds-font-size-body); line-height: 1.55; max-width: 72ch; }
+.nb-method p { margin: 0; }
+.nb-pickable { cursor: pointer; }
+.nb-pickable:hover td { background: var(--color-bg); }
+.nb-pickable:focus-visible { outline: 2px solid var(--color-fg); outline-offset: -2px; }
+.nb-t tr[aria-selected="true"] td { background: var(--color-bg); }
+.nb-t tr[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 var(--color-fg); }
+.nb-why-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--cds-gap-sm); }
+.nb-why-head h2 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--cds-gap-sm); }
+.nb-close { appearance: none; font: inherit; font-size: var(--cds-font-size-caption); cursor: pointer; color: var(--color-fg-muted);
+  background: none; border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: 2px var(--cds-pad-sm); }
+.nb-close:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+.nb-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--cds-gap-md); }
+.nb-step { display: flex; flex-direction: column; gap: var(--cds-gap-xs); min-width: 0; }
+.nb-step h3 { margin: 0 0 2px; font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); }
+.nb-step h3 .n { color: var(--color-fg-muted); margin-right: 6px; font-variant-numeric: tabular-nums; }
+.nb-ledger { display: flex; flex-direction: column; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+.nb-ledger div { display: flex; justify-content: space-between; gap: var(--cds-gap-sm); padding: 3px 0; border-bottom: 1px dashed var(--color-border-line); }
+.nb-ledger div > span:first-child { color: var(--color-fg-muted); }
+.nb-ledger div.sum { border-bottom: 0; border-top: 1px solid var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+.nb-ledger div.sum > span:first-child { color: var(--color-fg); }
+.nb-reason { margin: 0; font-size: var(--cds-font-size-body); line-height: 1.55; max-width: 80ch; }
+.nb-meter { position: relative; min-height: 64px; }
+.nb-meter svg text { fill: var(--color-fg-muted); font-size: var(--cds-font-size-caption); font-family: var(--font-anthropic-sans); }
+.nb-meter svg text.lbl { fill: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+[data-dash-source-state="empty"] { color: transparent; }
+[data-dash-source-state="refreshing"] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+@media (max-width: 760px) { .opt { display: none; } }
+</style>
+
+<div class="nb">
+  <header class="nb-head" id="top">
+    <h1>NBA Edge Board</h1>
+    <p class="nb-sub">
+      <span class="dash-skeleton" data-source="slate" data-field="date" data-row="0" id="h-date">—</span> ·
+      <span data-source="slate" data-field="games" data-row="0" id="h-games">—</span> games ·
+      <span data-source="slate" data-field="plays" data-row="0" id="h-plays">—</span> plays and
+      <span data-source="slate" data-field="leans" data-row="0" id="h-leans">—</span> leans across
+      <span data-source="slate" data-field="props_priced" data-row="0" id="h-props">—</span> player props and every game line
+    </p>
+    <p class="nb-note">
+      Lines from <span data-source="slate" data-field="book" data-row="0" id="h-book">—</span>, pulled
+      <span data-source="slate" data-field="generated_at" data-row="0" id="h-gen">—</span>; game results through
+      <span data-source="slate" data-field="stats_through" data-row="0" id="h-thru">—</span>.
+      The number each bet is priced on blends the model with the market: the model gets
+      <span data-source="slate" data-field="weight_totals" data-row="0" id="h-wt">—</span> of the say on totals,
+      <span data-source="slate" data-field="weight_sides" data-row="0" id="h-ws">—</span> on spreads and moneylines, and
+      <span data-source="slate" data-field="weight_props" data-row="0" id="h-wp">—</span> on props.
+      Lines move: re-check your book's price in each tab's calculator before you bet.
+    </p>
+  </header>
+
+  <nav class="nb-tabs" role="tablist" aria-label="Bet types">
+    <button class="nb-tab" role="tab" data-tab="best" id="tab-best">Best bets</button>
+    <button class="nb-tab" role="tab" data-tab="totals" id="tab-totals">Over/under</button>
+    <button class="nb-tab" role="tab" data-tab="spreads" id="tab-spreads">Spreads</button>
+    <button class="nb-tab" role="tab" data-tab="moneyline" id="tab-moneyline">Moneyline</button>
+    <button class="nb-tab" role="tab" data-tab="props" id="tab-props">Player props</button>
+    <button class="nb-tab" role="tab" data-tab="results" id="tab-results">Results</button>
+    <button class="nb-tab" role="tab" data-tab="model" id="tab-model">Model &amp; record</button>
+  </nav>
+
+  <!-- Best bets -->
+  <section class="nb-page" id="best" hidden>
+    <div class="nb-card" id="top5-card">
+      <div class="nb-cardhead">
+        <h2>Top 5 most likely hits tonight</h2>
+        <p class="nb-note">The bets the model gives the best chance of winning, among those priced fairly or better
+          (it doesn't expect to lose money on them at the listed odds). At most one per player and one game line per
+          game; questionable players and Check rows are left out. Click one to see why.</p>
+      </div>
+      <p class="nb-sub">Average chance to hit: <b id="t5-avg" class="dash-skeleton" data-source="slate" data-field="top5_avg_prob" data-row="0">—</b>
+        <span class="muted">across <span id="t5-n" data-source="slate" data-field="top5_count" data-row="0">—</span> picks. Track how they actually do on the Results tab.</span></p>
+      <div class="nb-wrap"><table class="nb-t" id="top5-table" data-source="top5" data-row-key="id"></table></div>
+    </div>
+    <div class="nb-card" id="best-card">
+      <div class="nb-cardhead">
+        <h2>Tonight's plays</h2>
+        <p class="nb-note">Play: expected profit of 3% or more per dollar (5% for props). Lean: 1–3% (2–5% for props).
+          Stake is a quarter-Kelly share of your bankroll, capped at 3%. Win % is the blended model's chance the bet wins. Click any bet to see why it made the list.</p>
+      </div>
+      <div class="nb-controls" id="best-chips" role="group" aria-label="Market">
+        <button class="nb-chip" data-m="" aria-pressed="true">All</button>
+        <button class="nb-chip" data-m="Total" aria-pressed="false">Over/under</button>
+        <button class="nb-chip" data-m="Spread" aria-pressed="false">Spreads</button>
+        <button class="nb-chip" data-m="Moneyline" aria-pressed="false">Moneyline</button>
+        <button class="nb-chip" data-m="Prop" aria-pressed="false">Props</button>
+      </div>
+      <div class="nb-wrap"><table class="nb-t" id="best-table" data-source="best_bets" data-row-key="id"></table></div>
+    </div>
+    <div class="nb-card nb-why" id="why-best" hidden>
+      <div class="nb-why-head"><h2 id="why-best-title"></h2><button class="nb-close" type="button" data-close="best">Close</button></div>
+      <p class="nb-reason" id="why-best-reason"></p>
+      <div class="nb-meter" id="why-best-meter"></div>
+      <div class="nb-steps" id="why-best-steps"></div>
+      <p class="nb-note" id="why-best-foot"></p>
+    </div>
+  </section>
+
+  <!-- Totals -->
+  <section class="nb-page" id="totals" hidden>
+    <template id="tpl-totals">
+    <div class="nb-card">
+      <div class="nb-cardhead">
+        <h2>Book total vs model</h2>
+        <p class="nb-note">Each game's posted total, the model's projection, and the blended number the bet is priced on.</p>
+      </div>
+      <div class="nb-legend"><span><i class="sw tick"></i>Book total</span><span><i class="sw" style="border:2px solid var(--nb-c0)"></i>Model</span><span><i class="sw" style="background:var(--nb-c1)"></i>Blend (priced)</span></div>
+      <div class="nb-chart" id="totals-chart" data-source="totals"></div>
+    </div>
+    <div class="nb-card">
+      <div class="nb-cardhead"><h2>Every total on the slate</h2>
+        <p class="nb-note">Over % and EV are at the book's line and price. Notes list the injuries and rest the model priced in, in points. Click a game to see why it's a bet, a lean or a pass.</p></div>
+      <div class="nb-wrap"><table class="nb-t" id="totals-table" data-source="totals" data-row-key="game"></table></div>
+    </div>
+    <div class="nb-card nb-why" id="why-totals" hidden>
+      <div class="nb-why-head"><h2 id="why-totals-title"></h2><button class="nb-close" type="button" data-close="totals">Close</button></div>
+      <p class="nb-reason" id="why-totals-reason"></p>
+      <div class="nb-meter" id="why-totals-meter"></div>
+      <div class="nb-steps" id="why-totals-steps"></div>
+      <p class="nb-note" id="why-totals-foot"></p>
+    </div>
+    <div class="nb-card" id="totals-calc">
+      <div class="nb-cardhead"><h2>Check your book's total</h2>
+        <p class="nb-note">Different line or price at your book? Enter it to see the model's chances and your expected profit.</p></div>
+      <div class="nb-controls">
+        <label class="nb-field grow">Game<select id="tc-game"></select></label>
+        <label class="nb-field">Total<input id="tc-line" type="number" step="0.5"></label>
+        <label class="nb-field">Over odds<input id="tc-over" type="number" step="1"></label>
+        <label class="nb-field">Under odds<input id="tc-under" type="number" step="1"></label>
+      </div>
+      <div class="nb-out" id="tc-out"></div>
+    </div>
+    </template>
+  </section>
+
+  <!-- Spreads -->
+  <section class="nb-page" id="spreads" hidden>
+    <template id="tpl-spreads">
+    <div class="nb-card">
+      <div class="nb-cardhead">
+        <h2>Home margin: book vs model</h2>
+        <p class="nb-note">Points the home team wins by. Right of the book's mark, the home side covers; left, the away side does.</p>
+      </div>
+      <div class="nb-legend"><span><i class="sw tick"></i>Book line</span><span><i class="sw" style="border:2px solid var(--nb-c0)"></i>Model</span><span><i class="sw" style="background:var(--nb-c1)"></i>Blend (priced)</span></div>
+      <div class="nb-chart" id="spreads-chart" data-source="spreads"></div>
+    </div>
+    <div class="nb-card">
+      <div class="nb-cardhead"><h2>Every spread on the slate</h2>
+        <p class="nb-note">Lines are the home team's. Model line is what the model would set; fair line is the blend the bet is priced on. Click a game to see why it's a bet, a lean or a pass.</p></div>
+      <div class="nb-wrap"><table class="nb-t" id="spreads-table" data-source="spreads" data-row-key="game"></table></div>
+    </div>
+    <div class="nb-card nb-why" id="why-spreads" hidden>
+      <div class="nb-why-head"><h2 id="why-spreads-title"></h2><button class="nb-close" type="button" data-close="spreads">Close</button></div>
+      <p class="nb-reason" id="why-spreads-reason"></p>
+      <div class="nb-meter" id="why-spreads-meter"></div>
+      <div class="nb-steps" id="why-spreads-steps"></div>
+      <p class="nb-note" id="why-spreads-foot"></p>
+    </div>
+    <div class="nb-card" id="spreads-calc">
+      <div class="nb-cardhead"><h2>Check your book's spread</h2>
+        <p class="nb-note">Pick a side and enter its line and price, for example −3.5 at −110.</p></div>
+      <div class="nb-controls">
+        <label class="nb-field grow">Game<select id="sc-game"></select></label>
+        <label class="nb-field">Side<select id="sc-side"></select></label>
+        <label class="nb-field">Line<input id="sc-line" type="number" step="0.5"></label>
+        <label class="nb-field">Odds<input id="sc-odds" type="number" step="1"></label>
+      </div>
+      <div class="nb-out" id="sc-out"></div>
+    </div>
+    </template>
+  </section>
+
+  <!-- Moneyline -->
+  <section class="nb-page" id="moneyline" hidden>
+    <template id="tpl-moneyline">
+    <div class="nb-card">
+      <div class="nb-cardhead">
+        <h2>Home win chance: market vs model</h2>
+        <p class="nb-note">The market's chance with the book's margin removed, and the blended chance the bet is priced on.</p>
+      </div>
+      <div class="nb-legend"><span><i class="sw tick"></i>Market (no vig)</span><span><i class="sw" style="background:var(--nb-c1)"></i>Blend (priced)</span></div>
+      <div class="nb-chart" id="ml-chart" data-source="moneylines"></div>
+    </div>
+    <div class="nb-card">
+      <div class="nb-cardhead"><h2>Every moneyline on the slate</h2>
+        <p class="nb-note">Fair odds are the price at which the bet breaks even on the blended chance. Bet only when the book pays more. Click a game to see why it's a bet, a lean or a pass.</p></div>
+      <div class="nb-wrap"><table class="nb-t" id="ml-table" data-source="moneylines" data-row-key="game"></table></div>
+    </div>
+    <div class="nb-card nb-why" id="why-moneyline" hidden>
+      <div class="nb-why-head"><h2 id="why-moneyline-title"></h2><button class="nb-close" type="button" data-close="moneyline">Close</button></div>
+      <p class="nb-reason" id="why-moneyline-reason"></p>
+      <div class="nb-meter" id="why-moneyline-meter"></div>
+      <div class="nb-steps" id="why-moneyline-steps"></div>
+      <p class="nb-note" id="why-moneyline-foot"></p>
+    </div>
+    <div class="nb-card" id="ml-calc">
+      <div class="nb-cardhead"><h2>Check your book's moneyline</h2></div>
+      <div class="nb-controls">
+        <label class="nb-field grow">Game<select id="mc-game"></select></label>
+        <label class="nb-field">Team<select id="mc-side"></select></label>
+        <label class="nb-field">Odds<input id="mc-odds" type="number" step="1"></label>
+      </div>
+      <div class="nb-out" id="mc-out"></div>
+    </div>
+    </template>
+  </section>
+
+  <!-- Props -->
+  <section class="nb-page" id="props" hidden>
+    <template id="tpl-props">
+    <div class="nb-card">
+      <div class="nb-cardhead">
+        <h2>Player props</h2>
+        <p class="nb-note">Model is minutes × per-minute production, adjusted for pace, opponent defense and teammates out. Check means the model is 25%+ away from the market, which usually means a role change or news it hasn't seen, so it isn't graded as a bet. Last 10 counts last season's games until this season has ten. Click any prop to see how the projection was built.</p>
+      </div>
+      <div class="nb-controls">
+        <label class="nb-field grow">Search<input id="pp-q" type="search" placeholder="Player or team"></label>
+        <label class="nb-field">Game<select id="pp-game"><option value="">All games</option></select></label>
+        <label class="nb-field">Stat<select id="pp-stat"><option value="">All stats</option></select></label>
+        <label class="nb-field">Grade<select id="pp-grade">
+          <option value="">All grades</option><option value="Play">Play</option><option value="Lean">Lean</option>
+          <option value="bet">Play or lean</option><option value="Check">Check</option><option value="Pass">Pass</option></select></label>
+      </div>
+      <div class="nb-wrap"><table class="nb-t" id="props-table" data-source="props" data-row-key="id"></table></div>
+    </div>
+    <div class="nb-card nb-why" id="why-props" hidden>
+      <div class="nb-why-head"><h2 id="why-props-title"></h2><button class="nb-close" type="button" data-close="props">Close</button></div>
+      <p class="nb-reason" id="why-props-reason"></p>
+      <div class="nb-meter" id="why-props-meter"></div>
+      <div class="nb-steps" id="why-props-steps"></div>
+      <p class="nb-note" id="why-props-foot"></p>
+    </div>
+    <div class="nb-card" id="props-calc">
+      <div class="nb-cardhead"><h2>Check any player line</h2>
+        <p class="nb-note">Works for any rotation player on tonight's slate, including lines ESPN doesn't carry. Uses the blended number where DraftKings has a line, otherwise the model alone.</p></div>
+      <div class="nb-controls">
+        <label class="nb-field grow">Player<select id="pc-player"></select></label>
+        <label class="nb-field">Stat<select id="pc-stat"></select></label>
+        <label class="nb-field">Line<input id="pc-line" type="number" step="0.5"></label>
+        <label class="nb-field">Over odds<input id="pc-over" type="number" step="1" value="-110"></label>
+        <label class="nb-field">Under odds<input id="pc-under" type="number" step="1" value="-110"></label>
+      </div>
+      <div class="nb-out" id="pc-out" data-source="projections"></div>
+    </div>
+    </template>
+  </section>
+
+  <!-- Results -->
+  <section class="nb-page" id="results" hidden>
+    <template id="tpl-results">
+    <div class="nb-controls" id="res-chips" role="group" aria-label="Which bets count">
+      <button class="nb-chip" data-s="Play" aria-pressed="true">Play bets only</button>
+      <button class="nb-chip" data-s="Play + Lean" aria-pressed="false">Play and Lean bets</button>
+      <button class="nb-chip" data-s="Top 5" aria-pressed="false">Top 5 picks</button>
+    </div>
+    <div class="nb-tiles" id="res-tiles">
+      <div class="nb-tile"><span class="k">Record</span>
+        <span class="v"><span id="rt-won" class="dash-skeleton">—</span>–<span id="rt-lost">—</span></span>
+        <span class="s"><span id="rt-push">—</span> pushes, <span id="rt-void">—</span> void</span></div>
+      <div class="nb-tile"><span class="k">Net at $10 a bet</span><span class="v" id="rt-profit">—</span>
+        <span class="s">on <span id="rt-staked">—</span> staked</span></div>
+      <div class="nb-tile"><span class="k">Return on money staked</span><span class="v" id="rt-roi">—</span>
+        <span class="s">over <span id="rt-nights">—</span> nights</span></div>
+      <div class="nb-tile"><span class="k">Win rate</span><span class="v" id="rt-win">—</span>
+        <span class="s"><span id="rt-pending">—</span> bets waiting on tonight</span></div>
+      <div class="nb-tile"><span class="k">Beat the closing price</span><span class="v" id="rt-beat">—</span>
+        <span class="s">of <span id="rt-clvn">—</span> bets got a better deal than the final pre-game line</span></div>
+      <div class="nb-tile"><span class="k">Edge vs the closing price</span><span class="v" id="rt-edge">—</span>
+        <span class="s">per bet; above zero over a few hundred bets means real skill</span></div>
+    </div>
+    <p class="nb-note">Closing-line value is the quickest honest test of a betting model. The closing price is the market's sharpest guess, so a model that keeps getting better prices than the close is finding real value, even through losing stretches. Win rate takes thousands of bets to say the same thing.</p>
+    <div class="nb-card">
+      <div class="nb-cardhead">
+        <h2>Night by night</h2>
+        <p class="nb-note">Bars are each night's profit at $10 a bet; the line is the running total. Bets are locked at the last price the board showed before tip-off.</p>
+      </div>
+      <div class="nb-chart" id="res-chart" data-source="results_daily" style="min-height:15rem"></div>
+    </div>
+    <div class="nb-card">
+      <div class="nb-cardhead"><h2>By market</h2>
+        <p class="nb-note">Void means the player didn't play, so the bet is refunded. Return is profit divided by money staked on settled bets. Edge vs close compares each bet with the same bet at DraftKings' closing line and price; value at closing odds is what the bet was worth if the closing price was right, which includes the book's margin (about 2.5% on game lines, more on props).</p></div>
+      <div class="nb-wrap"><table class="nb-t" id="res-markets" data-source="results_summary" data-row-key="id"></table></div>
+    </div>
+    <div class="nb-card">
+      <div class="nb-cardhead"><h2>Every bet</h2>
+        <p class="nb-note">Actual is the final total, the picked team's margin, or the player's stat line.</p></div>
+      <div class="nb-controls">
+        <label class="nb-field grow">Search<input id="rl-q" type="search" placeholder="Player, team or bet"></label>
+        <label class="nb-field">Night<select id="rl-date"><option value="">All nights</option></select></label>
+        <label class="nb-field">Market<select id="rl-market"><option value="">All markets</option>
+          <option value="Total">Over/under</option><option value="Spread">Spreads</option>
+          <option value="Moneyline">Moneyline</option><option value="Prop">Props</option></select></label>
+        <label class="nb-field">Result<select id="rl-result"><option value="">All results</option>
+          <option>Won</option><option>Lost</option><option>Push</option><option>Void</option><option>Pending</option></select></label>
+      </div>
+      <div class="nb-wrap"><table class="nb-t" id="res-ledger" data-source="results" data-row-key="id"></table></div>
+    </div>
+    </template>
+  </section>
+
+  <!-- Model -->
+  <section class="nb-page" id="model" hidden>
+    <template id="tpl-model">
+    <div class="nb-card">
+      <div class="nb-cardhead">
+        <h2>How the model did last season</h2>
+        <p class="nb-note">Walk-forward on 2025-26: each night priced with only earlier games, graded on Play bets at 1 unit each.
+          Line moved its way = when the model disagreed with the opener by a point or more, how often the line moved toward it by tip.
+          Error columns are the average miss against the final score. This replays team ratings and rest only, not injury news.</p>
+      </div>
+      <div class="nb-wrap"><table class="nb-t" id="bt-table" data-source="backtest" data-row-key="id"></table></div>
+    </div>
+    <div class="nb-card">
+      <div class="nb-cardhead">
+        <h2>Units won over the season</h2>
+        <p class="nb-note">Running total of Play bets, 1 unit each.</p>
+      </div>
+      <div class="nb-controls" id="curve-chips" role="group" aria-label="When the bet was placed">
+        <button class="nb-chip" data-t="Opening line" aria-pressed="true">At the opening line</button>
+        <button class="nb-chip" data-t="Closing line" aria-pressed="false">At the closing line</button>
+      </div>
+      <div class="nb-chart" id="curve-chart" data-source="backtest_curve" style="min-height:16rem"></div>
+    </div>
+    <div class="nb-grid">
+      <div class="nb-card">
+        <div class="nb-cardhead"><h2>Power ratings</h2>
+          <p class="nb-note">Points per 100 possessions, adjusted for opponents. Baseline is what the current players' five-year histories and the head coach predict; this season's games take over from it. Coach effect is the coach's own effect on net rating.</p></div>
+        <div class="nb-wrap"><table class="nb-t" id="rt-table" data-source="ratings" data-row-key="team"></table></div>
+      </div>
+      <div class="nb-card">
+        <div class="nb-cardhead"><h2>Injury report for tonight's teams</h2>
+          <p class="nb-note">Effect is the change to the team's projected margin in points, where the player matters enough to move it.</p></div>
+        <div class="nb-wrap"><table class="nb-t" id="inj-table" data-source="injuries" data-row-key="id"></table></div>
+      </div>
+    </div>
+    <div class="nb-card" id="method">
+      <div class="nb-cardhead"><h2>What the model does</h2></div>
+      <div class="nb-method">
+        <p><b>Teams.</b> Offense, defense and pace ratings from every game this season, adjusted for opponent and weighted toward recent games. Before a team has played much, the rating leans on a baseline built from its current players' last five regular seasons (scoring efficiency, playmaking, rebounding, steals, and how their teams did with them on the floor) and its head coach, whose effect on offense, defense and pace is measured across every team he has coached. No preseason games and no carry-over of last season's team rating.</p>
+        <p><b>Who plays.</b> Each player is valued by box-score production over a replacement player. The injury report and recent availability move the projection: a newly injured starter costs points, a returning star adds them. Second night of a back-to-back costs a point.</p>
+        <p><b>Prices.</b> The book's line and odds, with the margin removed, imply the market's own projection. The bet is priced on a blend of the two. Last season the model predicted where opening lines would move but not where closing lines would miss, so it gets a quarter of the say and its edges are real only when you bet early.</p>
+        <p><b>Props.</b> Minutes times per-minute rates for points, rebounds, assists and threes, adjusted for pace, opponent defense and teammates out. Rates come from each player's last five regular seasons, recent ones weighted most, then this season's games take over. Outcomes follow a negative binomial whose spread was measured per stat from last season's games. Props have no backtest because historical prop lines aren't available.</p>
+        <p class="muted">For entertainment and research. No model wins every night; bet only what you can afford to lose. If gambling stops being fun, 1-800-GAMBLER is free and confidential.</p>
+      </div>
+    </div>
+    </template>
+  </section>
+</div>
+
+<script>
+(() => {
+  const root = document.querySelector('.nb');
+  const C = dash.colors;
+  root.style.setProperty('--nb-c0', C[0]);
+  root.style.setProperty('--nb-c1', C[1]);
+
+  // One listener per event type on the page root: tabs are cloned in from
+  // <template>s on first visit, so their controls don't exist yet at start-up.
+  const on = { input: {}, change: {}, click: [] };
+  root.addEventListener('input', (e) => { const f = on.input[e.target.id]; if (f) f(e); });
+  root.addEventListener('change', (e) => { const f = on.change[e.target.id]; if (f) f(e); });
+  root.addEventListener('click', (e) => {
+    for (const [selector, f] of on.click) {
+      const el = e.target.closest(selector);
+      if (el && root.contains(el)) { f(el); return; }
+    }
+  });
+
+  // ---------- formatting ----------
+  const isNum = (v) => typeof v === 'number' && isFinite(v);
+  const odds = (v) => isNum(v) ? (v > 0 ? '+' : '') + Math.round(v) : '—';
+  const pct = (v) => isNum(v) ? (v * 100).toFixed(1) + '%' : '—';
+  const pct0 = (v) => isNum(v) ? Math.round(v * 100) + '%' : '—';
+  const ev = (v) => isNum(v) ? (v >= 0 ? '+' : '−') + Math.abs(v * 100).toFixed(1) + '%' : '—';
+  const n1 = (v) => isNum(v) ? v.toFixed(1) : '—';
+  const sgn = (v) => isNum(v) ? (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(1) : '—';
+  const line = (v) => isNum(v) ? (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v) : '—';
+  const tip = (v) => v ? new Date(v).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—';
+  const dayName = (v) => v ? new Date(v + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '—';
+  const stamp = (v) => v ? new Date(v).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+  const evClass = (v) => isNum(v) ? (v > 0 ? 'up' : 'muted') : '';
+
+  // ---------- math (mirrors nbabet/pricing.py) ----------
+  const erf = (x) => {
+    const s = Math.sign(x); x = Math.abs(x);
+    const t = 1 / (1 + 0.3275911 * x);
+    const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+    return s * y;
+  };
+  const ncdf = (x, m, sd) => 0.5 * (1 + erf((x - m) / (sd * Math.SQRT2)));
+  const dec = (a) => 1 + (a > 0 ? a / 100 : 100 / -a);
+  const evOf = (p, a, push = 0) => p * (dec(a) - 1) - (1 - p - push);
+  const fair = (p) => { p = Math.min(Math.max(p, 1e-4), 1 - 1e-4); return p >= 0.5 ? Math.round(-100 * p / (1 - p)) : Math.round(100 * (1 - p) / p); };
+  const normalOU = (mean, sd, L) => {
+    if (Number.isInteger(L)) {
+      const push = ncdf(L + 0.5, mean, sd) - ncdf(L - 0.5, mean, sd);
+      const over = 1 - ncdf(L + 0.5, mean, sd);
+      return [over, 1 - over - push, push];
+    }
+    const over = 1 - ncdf(L, mean, sd);
+    return [over, 1 - over, 0];
+  };
+  const lgamma = (z) => {
+    const g = 7, c = [0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313,
+      -176.61503916999185, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+    if (z < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * z)) - lgamma(1 - z);
+    z -= 1; let x = c[0];
+    for (let i = 1; i < g + 2; i++) x += c[i] / (z + i);
+    const t = z + g + 0.5;
+    return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
+  };
+  const nbOU = (mu, vmr, L) => {
+    mu = Math.max(mu, 1e-6);
+    const r = mu / Math.max(vmr - 1, 1e-3), p = r / (r + mu);
+    const pmf = (k) => Math.exp(lgamma(k + r) - lgamma(r) - lgamma(k + 1) + r * Math.log(p) + k * Math.log(1 - p));
+    const top = Math.floor(L);
+    let cdf = 0;
+    for (let k = 0; k <= top; k++) cdf += pmf(k);
+    if (Number.isInteger(L)) {
+      const push = pmf(L);
+      return [1 - cdf, cdf - push, push];
+    }
+    return [1 - cdf, cdf, 0];
+  };
+
+  // ---------- data access ----------
+  const D = (id) => dash.data(id);
+  const rows = (id) => { const d = D(id); return d.status === 'ok' && Array.isArray(d.data) ? d.data : null; };
+
+  function fail(el) {
+    el.replaceChildren();
+    const div = document.createElement('div');
+    div.className = 'nb-fail';
+    div.textContent = 'Failed to load';
+    el.appendChild(div);
+  }
+
+  // ---------- tables ----------
+  const sortState = {};
+  const showAll = {};
+  function table(el, data, cols, key, defaultSort, pick, limit) {
+    const id = el.id;
+    const st = sortState[id] || (sortState[id] = defaultSort || { field: null, dir: -1 });
+    let list = data.slice();
+    if (st.field) {
+      const col = cols.find((c) => c.f === st.field);
+      const get = col && col.sortBy ? col.sortBy : (r) => r[st.field];
+      list.sort((a, b) => {
+        const x = get(a), y = get(b);
+        if (x == null) return 1; if (y == null) return -1;
+        return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y))) * st.dir;
+      });
+    }
+    const thead = document.createElement('thead');
+    const hr = document.createElement('tr');
+    cols.forEach((c) => {
+      const th = document.createElement('th');
+      th.dataset.field = c.f;
+      if (c.num) th.classList.add('num');
+      if (c.opt) th.classList.add('opt');
+      if (st.field === c.f) th.setAttribute('aria-sort', st.dir > 0 ? 'ascending' : 'descending');
+      const b = document.createElement('button');
+      b.className = 'nb-sort';
+      b.type = 'button';
+      b.textContent = c.label;
+      b.addEventListener('click', () => {
+        if (st.field === c.f) st.dir = -st.dir; else { st.field = c.f; st.dir = c.num ? -1 : 1; }
+        table(el, data, cols, key, defaultSort, pick, limit);
+      });
+      th.appendChild(b);
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    const tbody = document.createElement('tbody');
+    const total = list.length;
+    if (limit && !showAll[id] && total > limit) list = list.slice(0, limit);
+    list.forEach((r) => {
+      const tr = document.createElement('tr');
+      tr.dataset.key = r[key];
+      if (pick) {
+        tr.tabIndex = 0;
+        tr.classList.add('nb-pickable');
+        if (pick.selected != null && String(pick.selected) === String(r[key])) tr.setAttribute('aria-selected', 'true');
+        tr.addEventListener('click', () => pick.on(r));
+        tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick.on(r); } });
+      }
+      cols.forEach((c) => {
+        const td = document.createElement('td');
+        if (c.num) td.classList.add('num');
+        if (c.opt) td.classList.add('opt');
+        if (c.cls) td.classList.add(...[].concat(typeof c.cls === 'function' ? c.cls(r) : c.cls).filter(Boolean));
+        const v = r[c.f];
+        if (c.pill) {
+          const s = document.createElement('span');
+          s.className = 'pill g-' + String(v).replace(/\s+/g, '-');
+          s.textContent = v == null ? '—' : v;
+          td.appendChild(s);
+        } else {
+          td.textContent = c.fmt ? c.fmt(v, r) : (v == null || v === '' ? '—' : v);
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    el.replaceChildren(thead, tbody);
+    if (list.length < total) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = cols.length;
+      td.className = 'nb-empty';
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'nb-chip';
+      more.textContent = 'Show all ' + total;
+      more.addEventListener('click', () => { showAll[id] = true; table(el, data, cols, key, defaultSort, pick, limit); });
+      td.append('Showing the top ' + list.length + ' of ' + total + ' by the current sort. Filter to narrow it, or ', more);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+    if (!list.length) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = cols.length;
+      td.className = 'nb-empty';
+      td.textContent = 'Nothing matches these filters.';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+  }
+  const gradeRank = { Play: 0, Lean: 1, Check: 2, Pass: 3 };
+
+  // ---------- dumbbell chart ----------
+  function dumbbell(el, data, o) {
+    el.replaceChildren();
+    const W = el.clientWidth;
+    if (!W) return;
+    const rowH = 40, top = 8, bottom = 30;
+    const H = top + bottom + rowH * data.length;
+    el.style.minHeight = H + 'px';
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+    // measure the widest game label
+    const probe = svg.append('text').attr('class', 'lbl');
+    let lw = 0;
+    data.forEach((r) => { probe.text(r.game); lw = Math.max(lw, probe.node().getComputedTextLength()); });
+    probe.remove();
+    const left = Math.ceil(lw) + 16, right = 16;
+    const vals = data.flatMap((r) => [o.line(r), o.model ? o.model(r) : null, o.blend(r)]).filter(isNum);
+    let [lo, hi] = d3.extent(vals);
+    const pad = Math.max((hi - lo) * 0.15, o.minPad || 2);
+    const x = d3.scaleLinear([lo - pad, hi + pad], [left, W - right]).nice();
+    const ax = svg.append('g').attr('transform', `translate(0,${H - bottom})`)
+      .call(d3.axisBottom(x).ticks(Math.max(2, Math.floor((W - left) / 80))).tickFormat(o.tickFmt || d3.format('~f')).tickSize(-(H - bottom - top)));
+    ax.attr('font-size', null).attr('font-family', null);
+    ax.select('.domain').remove();
+    ax.selectAll('.tick line').attr('stroke', 'var(--cds-chart-grid)');
+    if (o.zero != null && x(o.zero) > left) {
+      svg.append('line').attr('x1', x(o.zero)).attr('x2', x(o.zero)).attr('y1', top).attr('y2', H - bottom)
+        .attr('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '3 3');
+    }
+    const tipEl = document.createElement('div');
+    tipEl.className = 'nb-tip';
+    tipEl.hidden = true;
+    el.appendChild(tipEl);
+    data.forEach((r, i) => {
+      const y = top + rowH * i + rowH / 2;
+      const g = svg.append('g');
+      g.append('text').attr('class', 'lbl').attr('x', 0).attr('y', y).attr('dy', '0.35em').text(r.game);
+      const L = o.line(r), B = o.blend(r), M = o.model ? o.model(r) : null;
+      if (isNum(L) && isNum(B)) g.append('line').attr('x1', x(L)).attr('x2', x(B)).attr('y1', y).attr('y2', y)
+        .attr('stroke', C[1]).attr('stroke-width', 3).attr('stroke-linecap', 'round').attr('opacity', 0.5);
+      if (isNum(M)) g.append('circle').attr('cx', x(M)).attr('cy', y).attr('r', 5).attr('fill', 'var(--color-panel)').attr('stroke', C[0]).attr('stroke-width', 2);
+      if (isNum(L)) g.append('line').attr('x1', x(L)).attr('x2', x(L)).attr('y1', y - 8).attr('y2', y + 8).attr('stroke', 'var(--color-fg)').attr('stroke-width', 2);
+      if (isNum(B)) g.append('circle').attr('cx', x(B)).attr('cy', y).attr('r', 5).attr('fill', C[1]);
+      g.append('rect').attr('x', 0).attr('y', y - rowH / 2).attr('width', W).attr('height', rowH).attr('fill', 'transparent')
+        .on('mousemove', (ev) => {
+          tipEl.replaceChildren();
+          const head = document.createElement('div'); head.className = 't'; head.textContent = r.game; tipEl.appendChild(head);
+          o.tip(r).forEach(([k, v]) => { const d = document.createElement('div'); d.textContent = k + ': ' + v; tipEl.appendChild(d); });
+          tipEl.hidden = false;
+          const [px, py] = d3.pointer(ev, el);
+          const tw = tipEl.offsetWidth;
+          tipEl.style.left = Math.max(0, Math.min(px + 12, el.clientWidth - tw)) + 'px';
+          tipEl.style.top = (py + 12) + 'px';
+        })
+        .on('mouseleave', () => { tipEl.hidden = true; });
+    });
+  }
+
+  // ---------- header ----------
+  function drawHeader() {
+    const d = rows('slate');
+    const s = d && d[0];
+    const set = (id, v) => { const e = document.getElementById(id); e.textContent = v; e.classList.remove('dash-skeleton'); };
+    if (!s) return;
+    set('h-date', dayName(s.date));
+    set('h-games', s.games);
+    set('h-plays', s.plays);
+    set('h-leans', s.leans);
+    set('h-props', s.props_priced);
+    set('h-book', s.book);
+    set('h-gen', stamp(s.generated_at));
+    set('h-thru', s.stats_through ? new Date(s.stats_through + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }) : '—');
+    set('h-wt', pct0(s.weight_totals));
+    set('h-ws', pct0(s.weight_sides));
+    set('h-wp', pct0(s.weight_props));
+  }
+
+  // ---------- best bets ----------
+  let bestMarket = '';
+  document.querySelectorAll('#best-chips .nb-chip').forEach((b) => b.addEventListener('click', () => {
+    bestMarket = b.dataset.m;
+    document.querySelectorAll('#best-chips .nb-chip').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    drawBest();
+  }));
+  function drawTop5() {
+    const el = document.getElementById('top5-table');
+    if (D('top5').status === 'error') return fail(el);
+    const data = rows('top5');
+    const s = rows('slate'), sl = s && s[0];
+    if (sl) {
+      const a = document.getElementById('t5-avg'); a.classList.remove('dash-skeleton'); a.textContent = pct(sl.top5_avg_prob);
+      document.getElementById('t5-n').textContent = sl.top5_count;
+    }
+    if (!data) return;
+    table(el, data, [
+      { f: 'rank', label: '#', num: true },
+      { f: 'bet', label: 'Bet', cls: 'strong' },
+      { f: 'win_prob', label: 'Chance to hit', num: true, fmt: pct },
+      { f: 'odds', label: 'Odds', num: true, fmt: odds },
+      { f: 'fair_odds', label: 'Fair odds', num: true, fmt: odds, opt: true },
+      { f: 'ev', label: 'EV', num: true, fmt: ev, cls: (r) => evClass(r.ev) },
+      { f: 'market', label: 'Market', opt: true },
+      { f: 'game', label: 'Game' },
+      { f: 'grade', label: 'Grade', pill: true, opt: true },
+    ], 'id', { field: 'rank', dir: 1 }, pickFor('best'));
+  }
+
+  function drawBest() {
+    drawTop5();
+    const el = document.getElementById('best-table');
+    const st = D('best_bets');
+    if (st.status === 'error') return fail(el);
+    const data = rows('best_bets');
+    if (!data) return;
+    const list = data.filter((r) => !bestMarket || r.market === bestMarket);
+    table(el, list, [
+      { f: 'grade', label: 'Grade', pill: true, sortBy: (r) => -gradeRank[r.grade] },
+      { f: 'bet', label: 'Bet', cls: 'strong' },
+      { f: 'market', label: 'Market', opt: true },
+      { f: 'game', label: 'Game' },
+      { f: 'tip', label: 'Tip', fmt: tip, opt: true },
+      { f: 'odds', label: 'Odds', num: true, fmt: odds },
+      { f: 'win_prob', label: 'Win %', num: true, fmt: pct },
+      { f: 'fair_odds', label: 'Fair odds', num: true, fmt: odds, opt: true },
+      { f: 'ev', label: 'EV', num: true, fmt: ev, cls: (r) => evClass(r.ev) },
+      { f: 'stake_pct', label: 'Stake', num: true, fmt: pct },
+    ], 'id', null, pickFor('best'), 150);
+    why('best');
+  }
+
+  // ---------- totals ----------
+  const totalCols = [
+    { f: 'game', label: 'Game', cls: 'strong' },
+    { f: 'tip', label: 'Tip', fmt: tip, opt: true },
+    { f: 'line', label: 'Total', num: true, fmt: n1 },
+    { f: 'open_line', label: 'Opened', num: true, fmt: n1, opt: true },
+    { f: 'over_odds', label: 'Over', num: true, fmt: odds, opt: true },
+    { f: 'under_odds', label: 'Under', num: true, fmt: odds, opt: true },
+    { f: 'model_total', label: 'Model', num: true, fmt: n1 },
+    { f: 'blend_total', label: 'Blend', num: true, fmt: n1 },
+    { f: 'p_over', label: 'Over %', num: true, fmt: pct },
+    { f: 'pick', label: 'Pick' },
+    { f: 'ev', label: 'EV', num: true, fmt: ev, cls: (r) => evClass(r.ev) },
+    { f: 'grade', label: 'Grade', pill: true, sortBy: (r) => -gradeRank[r.grade] },
+    { f: 'notes', label: 'Notes', cls: 'txt', opt: true },
+  ];
+  function drawTotals() {
+    const data = rows('totals');
+    const chart = document.getElementById('totals-chart'), tbl = document.getElementById('totals-table');
+    if (D('totals').status === 'error') { fail(chart); fail(tbl); return; }
+    if (!data) return;
+    dumbbell(chart, data, {
+      line: (r) => r.line, model: (r) => r.model_total, blend: (r) => r.blend_total,
+      tip: (r) => [['Book', n1(r.line)], ['Model', n1(r.model_total)], ['Blend', n1(r.blend_total)], ['Pick', r.pick + ' (' + ev(r.ev) + ')']],
+    });
+    table(tbl, data, totalCols, 'game', { field: 'ev', dir: -1 }, pickFor('totals'));
+    why('totals');
+    fillSelect('tc-game', data.map((r) => [r.game, r.game]));
+    calcTotals(false);
+  }
+  function fillSelect(id, opts) {
+    const sel = document.getElementById(id);
+    const keep = sel.value;
+    const sig = opts.map((o) => o[0]).join('|');
+    if (sel.dataset.sig === sig) return;
+    sel.dataset.sig = sig;
+    sel.replaceChildren(...opts.map(([v, t]) => new Option(t, v)));
+    if (opts.some((o) => o[0] === keep)) sel.value = keep;
+  }
+  function outStats(el, stats) {
+    el.replaceChildren(...stats.map(([k, v, cls]) => {
+      const d = document.createElement('div'); d.className = 'nb-stat';
+      const a = document.createElement('span'); a.className = 'k'; a.textContent = k;
+      const b = document.createElement('span'); b.className = 'v' + (cls ? ' ' + cls : ''); b.textContent = v;
+      d.append(a, b); return d;
+    }));
+  }
+  const num = (id) => { const v = parseFloat(document.getElementById(id).value); return isFinite(v) ? v : null; };
+  function calcTotals(reset) {
+    const data = rows('totals'); if (!data || !data.length) return;
+    const r = data.find((x) => x.game === document.getElementById('tc-game').value) || data[0];
+    if (reset || document.getElementById('tc-line').value === '') {
+      document.getElementById('tc-line').value = r.line;
+      document.getElementById('tc-over').value = r.over_odds;
+      document.getElementById('tc-under').value = r.under_odds;
+    }
+    const L = num('tc-line'), oo = num('tc-over'), uo = num('tc-under');
+    if (L == null || !oo || !uo) return;
+    const [po, pu, pp] = normalOU(r.blend_total, r.sd, L);
+    const eo = evOf(po, oo, pp), eu = evOf(pu, uo, pp);
+    outStats(document.getElementById('tc-out'), [
+      ['Fair total', n1(r.blend_total)], ['Over wins', pct(po)], ['Under wins', pct(pu)],
+      ['EV over', ev(eo), evClass(eo)], ['EV under', ev(eu), evClass(eu)],
+      ['Fair over odds', odds(fair(po / (1 - pp)))],
+    ]);
+  }
+  on.change['tc-game'] = () => calcTotals(true);
+  ['tc-line', 'tc-over', 'tc-under'].forEach((id) => { on.input[id] = () => calcTotals(false); });
+
+  // ---------- spreads ----------
+  const spreadCols = [
+    { f: 'game', label: 'Game', cls: 'strong' },
+    { f: 'tip', label: 'Tip', fmt: tip, opt: true },
+    { f: 'home_line', label: 'Home line', num: true, fmt: line },
+    { f: 'open_home_line', label: 'Opened', num: true, fmt: line, opt: true },
+    { f: 'home_odds', label: 'Home odds', num: true, fmt: odds, opt: true },
+    { f: 'away_odds', label: 'Away odds', num: true, fmt: odds, opt: true },
+    { f: 'model_home_line', label: 'Model line', num: true, fmt: sgn },
+    { f: 'blend_home_line', label: 'Fair line', num: true, fmt: sgn },
+    { f: 'p_home', label: 'Home covers', num: true, fmt: pct },
+    { f: 'pick', label: 'Pick' },
+    { f: 'ev', label: 'EV', num: true, fmt: ev, cls: (r) => evClass(r.ev) },
+    { f: 'grade', label: 'Grade', pill: true, sortBy: (r) => -gradeRank[r.grade] },
+    { f: 'notes', label: 'Notes', cls: 'txt', opt: true },
+  ];
+  function drawSpreads() {
+    const data = rows('spreads');
+    const chart = document.getElementById('spreads-chart'), tbl = document.getElementById('spreads-table');
+    if (D('spreads').status === 'error') { fail(chart); fail(tbl); return; }
+    if (!data) return;
+    dumbbell(chart, data, {
+      line: (r) => -r.home_line, model: (r) => r.model_margin, blend: (r) => r.blend_margin, zero: 0, minPad: 3,
+      tickFmt: (v) => (v > 0 ? '+' : '') + v,
+      tip: (r) => [['Book', r.home + ' ' + line(r.home_line)], ['Model', r.home + ' ' + sgn(r.model_home_line)],
+        ['Fair', r.home + ' ' + sgn(r.blend_home_line)], ['Pick', r.pick + ' (' + ev(r.ev) + ')']],
+    });
+    table(tbl, data, spreadCols, 'game', { field: 'ev', dir: -1 }, pickFor('spreads'));
+    why('spreads');
+    fillSelect('sc-game', data.map((r) => [r.game, r.game]));
+    calcSpreads(false);
+  }
+  function calcSpreads(reset) {
+    const data = rows('spreads'); if (!data || !data.length) return;
+    const r = data.find((x) => x.game === document.getElementById('sc-game').value) || data[0];
+    const side = document.getElementById('sc-side');
+    const sig = r.home + '|' + r.away;
+    if (side.dataset.sig !== sig) {
+      side.dataset.sig = sig;
+      side.replaceChildren(new Option(r.home + ' (home)', 'home'), new Option(r.away + ' (away)', 'away'));
+      reset = true;
+    }
+    const home = side.value === 'home';
+    if (reset || document.getElementById('sc-line').value === '') {
+      document.getElementById('sc-line').value = home ? r.home_line : -r.home_line;
+      document.getElementById('sc-odds').value = home ? r.home_odds : r.away_odds;
+    }
+    const s = num('sc-line'), o = num('sc-odds');
+    if (s == null || !o) return;
+    // Home covers when margin > -s; away covers when margin < s.
+    const [ph, pa, pp] = normalOU(r.blend_margin, r.sd, home ? -s : s);
+    const pw = home ? ph : pa;
+    const e = evOf(pw, o, pp);
+    const team = home ? r.home : r.away;
+    outStats(document.getElementById('sc-out'), [
+      ['Fair line', team + ' ' + sgn(home ? -r.blend_margin : r.blend_margin)],
+      ['Covers', pct(pw)], ['Push', pct(pp)], ['EV', ev(e), evClass(e)], ['Fair odds', odds(fair(pw / (1 - pp)))],
+    ]);
+  }
+  on.change['sc-game'] = on.change['sc-side'] = () => calcSpreads(true);
+  ['sc-line', 'sc-odds'].forEach((id) => { on.input[id] = () => calcSpreads(false); });
+
+  // ---------- moneyline ----------
+  const mlCols = [
+    { f: 'game', label: 'Game', cls: 'strong' },
+    { f: 'tip', label: 'Tip', fmt: tip, opt: true },
+    { f: 'away_ml', label: 'Away', num: true, fmt: odds },
+    { f: 'home_ml', label: 'Home', num: true, fmt: odds },
+    { f: 'p_home_market', label: 'Market home %', num: true, fmt: pct, opt: true },
+    { f: 'p_home', label: 'Home wins', num: true, fmt: pct },
+    { f: 'fair_away', label: 'Fair away', num: true, fmt: odds, opt: true },
+    { f: 'fair_home', label: 'Fair home', num: true, fmt: odds, opt: true },
+    { f: 'pick', label: 'Pick' },
+    { f: 'ev', label: 'EV', num: true, fmt: ev, cls: (r) => evClass(r.ev) },
+    { f: 'grade', label: 'Grade', pill: true, sortBy: (r) => -gradeRank[r.grade] },
+    { f: 'notes', label: 'Notes', cls: 'txt', opt: true },
+  ];
+  function drawML() {
+    const data = rows('moneylines');
+    const chart = document.getElementById('ml-chart'), tbl = document.getElementById('ml-table');
+    if (D('moneylines').status === 'error') { fail(chart); fail(tbl); return; }
+    if (!data) return;
+    dumbbell(chart, data, {
+      line: (r) => r.p_home_market * 100, blend: (r) => r.p_home * 100, zero: 50, minPad: 5,
+      tickFmt: (v) => v + '%',
+      tip: (r) => [['Market', r.home + ' ' + pct(r.p_home_market)], ['Blend', r.home + ' ' + pct(r.p_home)], ['Pick', r.pick + ' (' + ev(r.ev) + ')']],
+    });
+    table(tbl, data, mlCols, 'game', { field: 'ev', dir: -1 }, pickFor('moneyline'));
+    why('moneyline');
+    fillSelect('mc-game', data.map((r) => [r.game, r.game]));
+    calcML(false);
+  }
+  function calcML(reset) {
+    const data = rows('moneylines'); if (!data || !data.length) return;
+    const r = data.find((x) => x.game === document.getElementById('mc-game').value) || data[0];
+    const side = document.getElementById('mc-side');
+    const sig = r.home + '|' + r.away;
+    if (side.dataset.sig !== sig) {
+      side.dataset.sig = sig;
+      side.replaceChildren(new Option(r.home + ' (home)', 'home'), new Option(r.away + ' (away)', 'away'));
+      reset = true;
+    }
+    const home = side.value === 'home';
+    if (reset || document.getElementById('mc-odds').value === '') document.getElementById('mc-odds').value = home ? r.home_ml : r.away_ml;
+    const o = num('mc-odds'); if (!o) return;
+    const p = home ? r.p_home : r.p_away;
+    const e = evOf(p, o);
+    outStats(document.getElementById('mc-out'), [['Wins', pct(p)], ['Fair odds', odds(fair(p))], ['EV', ev(e), evClass(e)]]);
+  }
+  on.change['mc-game'] = on.change['mc-side'] = () => calcML(true);
+  on.input['mc-odds'] = () => calcML(false);
+
+  // ---------- props ----------
+  const propCols = [
+    { f: 'player', label: 'Player', cls: 'strong' },
+    { f: 'team', label: 'Team', opt: true },
+    { f: 'stat_label', label: 'Stat' },
+    { f: 'line', label: 'Line', num: true },
+    { f: 'over_odds', label: 'Over', num: true, fmt: odds, opt: true },
+    { f: 'under_odds', label: 'Under', num: true, fmt: odds, opt: true },
+    { f: 'proj', label: 'Model', num: true, fmt: n1 },
+    { f: 'blend', label: 'Blend', num: true, fmt: n1, opt: true },
+    { f: 'minutes', label: 'Min', num: true, fmt: n1, opt: true },
+    { f: 'p_over', label: 'Over %', num: true, fmt: pct },
+    { f: 'pick', label: 'Pick' },
+    { f: 'ev', label: 'EV', num: true, fmt: ev, cls: (r) => evClass(r.ev) },
+    { f: 'grade', label: 'Grade', pill: true, sortBy: (r) => -gradeRank[r.grade] },
+    { f: 'l10_avg', label: 'Last 10 avg', num: true, fmt: n1, opt: true },
+    { f: 'l10_hit', label: 'Last 10 over', num: true, fmt: pct0, opt: true },
+    { f: 'status', label: 'Status', pill: true, opt: true },
+  ];
+  on.input['pp-q'] = () => drawProps();
+  ['pp-game', 'pp-stat', 'pp-grade'].forEach((id) => { on.change[id] = () => drawProps(); });
+  function drawProps() {
+    const tbl = document.getElementById('props-table');
+    if (D('props').status === 'error') return fail(tbl);
+    const data = rows('props');
+    if (!data) return;
+    const games = [...new Set(data.map((r) => r.game))];
+    const stats = [...new Map(data.map((r) => [r.stat, r.stat_label])).entries()];
+    const gs = document.getElementById('pp-game'), ss = document.getElementById('pp-stat');
+    if (gs.options.length !== games.length + 1) { const v = gs.value; gs.replaceChildren(new Option('All games', ''), ...games.map((g) => new Option(g, g))); gs.value = v; }
+    if (ss.options.length !== stats.length + 1) { const v = ss.value; ss.replaceChildren(new Option('All stats', ''), ...stats.map(([k, l]) => new Option(l, k))); ss.value = v; }
+    const q = document.getElementById('pp-q').value.trim().toLowerCase();
+    const g = gs.value, s = ss.value, gr = document.getElementById('pp-grade').value;
+    const list = data.filter((r) => (!q || (r.player + ' ' + r.team).toLowerCase().includes(q))
+      && (!g || r.game === g) && (!s || r.stat === s)
+      && (!gr || (gr === 'bet' ? (r.grade === 'Play' || r.grade === 'Lean') : r.grade === gr)));
+    table(tbl, list, propCols, 'id', { field: 'ev', dir: -1 }, pickFor('props'), 150);
+    why('props');
+  }
+  function drawPropCalc() {
+    const out = document.getElementById('pc-out');
+    if (D('projections').status === 'error') return fail(out);
+    const data = rows('projections');
+    if (!data) return;
+    const players = [...new Map(data.map((r) => [r.player + '|' + r.team, r])).values()]
+      .sort((a, b) => a.player.localeCompare(b.player));
+    fillSelect('pc-player', players.map((r) => [r.player + '|' + r.team, r.player + ' · ' + r.team + ' vs ' + r.opp]));
+    const stats = [...new Map(data.map((r) => [r.stat, r.stat_label])).entries()];
+    fillSelect('pc-stat', stats.map(([k, l]) => [k, l]));
+    calcProp(false);
+  }
+  function calcProp(reset) {
+    const data = rows('projections'); if (!data || !data.length) return;
+    const [player, team] = document.getElementById('pc-player').value.split('|');
+    const stat = document.getElementById('pc-stat').value;
+    const r = data.find((x) => x.player === player && x.team === team && x.stat === stat);
+    if (!r) return;
+    const lineEl = document.getElementById('pc-line');
+    if (reset || lineEl.value === '') {
+      const book = (rows('props') || []).find((p) => p.id === r.id);
+      lineEl.value = book ? book.line : Math.round(r.calc_mean) - 0.5;
+      if (book) { document.getElementById('pc-over').value = book.over_odds; document.getElementById('pc-under').value = book.under_odds; }
+    }
+    const L = num('pc-line'), oo = num('pc-over'), uo = num('pc-under');
+    if (L == null || !oo || !uo) return;
+    const [po, pu, pp] = nbOU(r.calc_mean, r.vmr, L);
+    const eo = evOf(po, oo, pp), eu = evOf(pu, uo, pp);
+    outStats(document.getElementById('pc-out'), [
+      ['Projection', n1(r.calc_mean)], ['Minutes', n1(r.minutes)], ['Over hits', pct(po)], ['Under hits', pct(pu)],
+      ['EV over', ev(eo), evClass(eo)], ['EV under', ev(eu), evClass(eu)],
+    ]);
+  }
+  on.change['pc-player'] = on.change['pc-stat'] = () => calcProp(true);
+  ['pc-line', 'pc-over', 'pc-under'].forEach((id) => { on.input[id] = () => calcProp(false); });
+
+  // ---------- model page ----------
+  let curveTiming = 'Opening line';
+  on.click.push(['#curve-chips .nb-chip', (b) => {
+    curveTiming = b.dataset.t;
+    document.querySelectorAll('#curve-chips .nb-chip').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    drawCurve();
+  }]);
+  function drawModel() {
+    const bt = document.getElementById('bt-table');
+    if (D('backtest').status === 'error') fail(bt);
+    const b = rows('backtest');
+    if (b) table(bt, b, [
+      { f: 'market', label: 'Market', cls: 'strong' },
+      { f: 'timing', label: 'Bet at' },
+      { f: 'bets', label: 'Bets', num: true },
+      { f: 'wins', label: 'Won', num: true },
+      { f: 'losses', label: 'Lost', num: true },
+      { f: 'win_pct', label: 'Win %', num: true, fmt: pct },
+      { f: 'units', label: 'Units', num: true, fmt: sgn, cls: (r) => r.units > 0 ? 'up' : 'down' },
+      { f: 'roi', label: 'ROI', num: true, fmt: ev, cls: (r) => r.roi > 0 ? 'up' : 'down' },
+      { f: 'clv_rate', label: 'Line moved its way', num: true, fmt: pct0, opt: true },
+      { f: 'model_mae', label: 'Model error', num: true, fmt: n1, opt: true },
+      { f: 'line_mae', label: 'Closing line error', num: true, fmt: n1, opt: true },
+    ], 'id');
+    const rt = document.getElementById('rt-table');
+    if (D('ratings').status === 'error') fail(rt);
+    const r = rows('ratings');
+    if (r) table(rt, r, [
+      { f: 'rank', label: '#', num: true },
+      { f: 'team', label: 'Team', cls: 'strong' },
+      { f: 'net', label: 'Net', num: true, fmt: sgn },
+      { f: 'off_rating', label: 'Off', num: true, fmt: n1 },
+      { f: 'def_rating', label: 'Def', num: true, fmt: n1 },
+      { f: 'pace', label: 'Pace', num: true, fmt: n1, opt: true },
+      { f: 'baseline_net', label: 'Baseline', num: true, fmt: sgn, opt: true },
+      { f: 'coach', label: 'Coach', opt: true },
+      { f: 'coach_effect', label: 'Coach effect', num: true, fmt: sgn, opt: true },
+      { f: 'games', label: 'Games', num: true, opt: true },
+    ], 'team', { field: 'rank', dir: 1 });
+    const it = document.getElementById('inj-table');
+    if (D('injuries').status === 'error') fail(it);
+    const inj = rows('injuries');
+    if (inj) table(it, inj, [
+      { f: 'player', label: 'Player', cls: 'strong' },
+      { f: 'team', label: 'Team' },
+      { f: 'status', label: 'Status', pill: true },
+      { f: 'impact_pts', label: 'Effect', num: true, fmt: sgn },
+      { f: 'note', label: 'Latest', cls: 'txt', opt: true },
+    ], 'id');
+    drawCurve();
+  }
+  function drawCurve() {
+    const el = document.getElementById('curve-chart');
+    if (D('backtest_curve').status === 'error') return fail(el);
+    const all = rows('backtest_curve');
+    if (!all) return;
+    el.replaceChildren();
+    const W = el.clientWidth; if (!W) return;
+    const H = 256, top = 12, bottom = 28;
+    const markets = ['Totals', 'Spreads', 'Moneyline'];
+    const series = markets.map((m, i) => ({ m, color: C[i], pts: all.filter((r) => r.market === m && r.timing === curveTiming)
+      .map((r) => ({ d: new Date(r.date + 'T12:00:00Z'), u: r.units })) })).filter((s) => s.pts.length);
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+    const ys = series.flatMap((s) => s.pts.map((p) => p.u)).concat([0]);
+    const y = d3.scaleLinear(d3.extent(ys), [H - bottom, top]).nice();
+    // left margin from the widest y tick, right margin from the widest end label
+    const probe = svg.append('text');
+    const yTicks = y.ticks(5);
+    let lw = 0; yTicks.forEach((t) => { probe.text(sgn(t)); lw = Math.max(lw, probe.node().getComputedTextLength()); });
+    let rw = 0; series.forEach((s) => { probe.text(s.m + ' ' + sgn(s.pts[s.pts.length - 1].u)); rw = Math.max(rw, probe.node().getComputedTextLength()); });
+    probe.remove();
+    const left = Math.ceil(lw) + 10, right = Math.min(Math.ceil(rw) + 12, W * 0.4);
+    const x = d3.scaleUtc(d3.extent(all, (r) => new Date(r.date + 'T12:00:00Z')), [left, W - right]);
+    const gy = svg.append('g').attr('transform', `translate(${left},0)`).call(d3.axisLeft(y).tickValues(yTicks).tickFormat(sgn).tickSize(-(W - left - right)));
+    gy.attr('font-size', null).attr('font-family', null); gy.select('.domain').remove();
+    gy.selectAll('.tick line').attr('stroke', 'var(--cds-chart-grid)');
+    const gx = svg.append('g').attr('transform', `translate(0,${H - bottom})`)
+      .call(d3.axisBottom(x).ticks(Math.max(2, Math.floor((W - left - right) / 90))).tickFormat(d3.utcFormat('%b')));
+    gx.attr('font-size', null).attr('font-family', null); gx.select('.domain').attr('stroke', 'var(--cds-chart-axis)');
+    svg.append('line').attr('x1', left).attr('x2', W - right).attr('y1', y(0)).attr('y2', y(0)).attr('stroke', 'var(--cds-chart-reference)');
+    const ln = d3.line().x((p) => x(p.d)).y((p) => y(p.u));
+    // end labels, nudged apart so they never overlap
+    const ends = series.map((s) => ({ s, y: y(s.pts[s.pts.length - 1].u) })).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 14) ends[i].y = ends[i - 1].y + 14;
+    series.forEach((s) => {
+      svg.append('path').attr('d', ln(s.pts)).attr('fill', 'none').attr('stroke', s.color).attr('stroke-width', 2)
+        .attr('stroke-linejoin', 'round').attr('stroke-linecap', 'round');
+      const last = s.pts[s.pts.length - 1];
+      svg.append('circle').attr('cx', x(last.d)).attr('cy', y(last.u)).attr('r', 3).attr('fill', s.color);
+      const e = ends.find((q) => q.s === s);
+      svg.append('text').attr('class', 'lbl').attr('x', W - right + 8).attr('y', e.y).attr('dy', '0.35em')
+        .text(s.m + ' ' + sgn(last.u));
+    });
+  }
+
+  // ---------- results ----------
+  let resSet = 'Play';
+  on.click.push(['#res-chips .nb-chip', (b) => {
+    resSet = b.dataset.s;
+    document.querySelectorAll('#res-chips .nb-chip').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    drawResults();
+  }]);
+  on.input['rl-q'] = () => drawResults();
+  ['rl-date', 'rl-market', 'rl-result'].forEach((id) => { on.change[id] = () => drawResults(); });
+  const money = (v) => isNum(v) ? (v < 0 ? '−$' : '$') + Math.abs(v).toFixed(2) : '—';
+  const smoney = (v) => isNum(v) ? (v > 0 ? '+$' : v < 0 ? '−$' : '$') + Math.abs(v).toFixed(2) : '—';
+  const nightFmt = (v) => v ? new Date(v + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }) : '—';
+
+  function drawResults() {
+    const sum = rows('results_summary');
+    const tilesOk = D('results_summary').status;
+    const all = sum && sum.find((r) => r.id === resSet + '|All');
+    const tile = (id, f, fmt, cls) => {
+      const e = document.getElementById(id);
+      e.classList.remove('dash-skeleton');
+      if (!all) { e.textContent = tilesOk === 'error' ? '—' : e.textContent; return; }
+      e.dataset.source = 'results_summary';
+      e.dataset.field = f;
+      e.dataset.where = 'id=' + enc(all.id);
+      e.textContent = fmt ? fmt(all[f]) : all[f];
+      e.classList.remove('up', 'down');
+      if (cls) { const c = cls(all[f]); if (c) e.classList.add(c); }
+    };
+    const tone = (v) => isNum(v) && v !== 0 ? (v > 0 ? 'up' : 'down') : null;
+    tile('rt-won', 'won'); tile('rt-lost', 'lost'); tile('rt-push', 'pushes'); tile('rt-void', 'voids');
+    tile('rt-profit', 'profit', smoney, tone); tile('rt-staked', 'staked', money);
+    tile('rt-roi', 'roi', ev, tone); tile('rt-nights', 'nights');
+    tile('rt-win', 'win_pct', pct); tile('rt-pending', 'pending');
+    tile('rt-beat', 'beat_close_rate', pct0); tile('rt-clvn', 'clv_bets');
+    tile('rt-edge', 'avg_edge_vs_close', ev, tone);
+
+    const mk = document.getElementById('res-markets');
+    if (D('results_summary').status === 'error') fail(mk);
+    else if (sum) table(mk, sum.filter((r) => r.set === resSet), [
+      { f: 'market', label: 'Market', cls: 'strong', fmt: (v) => ({ All: 'All bets', Total: 'Over/under', Spread: 'Spreads', Prop: 'Props' })[v] || v },
+      { f: 'bets', label: 'Settled', num: true },
+      { f: 'won', label: 'Won', num: true },
+      { f: 'lost', label: 'Lost', num: true },
+      { f: 'pushes', label: 'Push', num: true, opt: true },
+      { f: 'voids', label: 'Void', num: true, opt: true },
+      { f: 'pending', label: 'Pending', num: true, opt: true },
+      { f: 'staked', label: 'Staked', num: true, fmt: money, opt: true },
+      { f: 'profit', label: 'Net', num: true, fmt: smoney, cls: (r) => tone(r.profit) },
+      { f: 'roi', label: 'Return', num: true, fmt: ev, cls: (r) => tone(r.roi) },
+      { f: 'win_pct', label: 'Win %', num: true, fmt: pct },
+      { f: 'beat_close_rate', label: 'Beat close', num: true, fmt: pct0 },
+      { f: 'avg_edge_vs_close', label: 'Edge vs close', num: true, fmt: ev, cls: (r) => tone(r.avg_edge_vs_close) },
+      { f: 'avg_clv', label: 'Value at closing odds', num: true, fmt: ev, opt: true },
+    ], 'id');
+
+    const led = document.getElementById('res-ledger');
+    const res = rows('results');
+    if (D('results').status === 'error') fail(led);
+    else if (res) {
+      const inSet = (r) => resSet === 'Top 5' ? !!r.top5 : (resSet === 'Play' ? r.grade === 'Play' : (r.grade === 'Play' || r.grade === 'Lean'));
+      const dates = [...new Set(res.map((r) => r.date))].sort().reverse();
+      const ds = document.getElementById('rl-date');
+      if (ds.options.length !== dates.length + 1) {
+        const v = ds.value;
+        ds.replaceChildren(new Option('All nights', ''), ...dates.map((d) => new Option(nightFmt(d), d)));
+        ds.value = v;
+      }
+      const q = document.getElementById('rl-q').value.trim().toLowerCase();
+      const fd = ds.value, fm = document.getElementById('rl-market').value, fr = document.getElementById('rl-result').value;
+      const list = res.filter((r) => inSet(r) && (!fd || r.date === fd) && (!fm || r.market === fm)
+        && (!fr || r.result === fr) && (!q || (r.bet + ' ' + r.game).toLowerCase().includes(q)));
+      table(led, list, [
+        { f: 'date', label: 'Night', fmt: nightFmt },
+        { f: 'result', label: 'Result', pill: true },
+        { f: 'bet', label: 'Bet', cls: 'strong' },
+        { f: 'grade', label: 'Grade', pill: true, opt: true },
+        { f: 'game', label: 'Game', opt: true },
+        { f: 'odds', label: 'Odds', num: true, fmt: odds },
+        { f: 'actual', label: 'Actual', num: true, fmt: (v) => isNum(v) ? String(v) : '—' },
+        { f: 'profit', label: 'Profit', num: true, fmt: smoney, cls: (r) => tone(r.profit) },
+        { f: 'close_line', label: 'Closing line', num: true, fmt: (v) => isNum(v) ? String(v) : '—', opt: true },
+        { f: 'close_odds', label: 'Closing odds', num: true, fmt: odds, opt: true },
+        { f: 'edge_vs_close', label: 'Edge vs close', num: true, fmt: ev, cls: (r) => tone(r.edge_vs_close) },
+        { f: 'ev', label: 'Model EV', num: true, fmt: ev, opt: true },
+      ], 'id', { field: 'date', dir: -1 }, null, 150);
+    }
+    drawResultsChart();
+  }
+
+  function drawResultsChart() {
+    const el = document.getElementById('res-chart');
+    if (D('results_daily').status === 'error') return fail(el);
+    const all = rows('results_daily');
+    if (!all) return;
+    el.replaceChildren();
+    const W = el.clientWidth; if (!W) return;
+    const data = all.filter((r) => r.set === resSet && r.bets > 0).sort((a, b) => a.date.localeCompare(b.date));
+    if (!data.length) {
+      const d = document.createElement('div');
+      d.className = 'nb-empty';
+      d.textContent = 'No settled bets yet. The first night appears here once its games are final.';
+      el.appendChild(d);
+      return;
+    }
+    const H = 240, top = 22, bottom = 28;
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+    const vals = data.flatMap((r) => [r.profit, r.cum_profit]).concat([0]);
+    const y = d3.scaleLinear(d3.extent(vals), [H - bottom, top]).nice();
+    const probe = svg.append('text');
+    const yTicks = y.ticks(5);
+    let lw = 0; yTicks.forEach((t) => { probe.text(smoney(t)); lw = Math.max(lw, probe.node().getComputedTextLength()); });
+    probe.text('Total ' + smoney(data[data.length - 1].cum_profit));
+    const endW = probe.node().getComputedTextLength();
+    probe.remove();
+    const left = Math.ceil(lw) + 10, right = Math.min(Math.ceil(endW) + 12, W * 0.35);
+    const x = d3.scaleBand(data.map((r) => r.date), [left, W - right]).padding(0.35);
+    const gy = svg.append('g').attr('transform', `translate(${left},0)`).call(d3.axisLeft(y).tickValues(yTicks).tickFormat(smoney).tickSize(-(W - left - right)));
+    gy.attr('font-size', null).attr('font-family', null); gy.select('.domain').remove();
+    gy.selectAll('.tick line').attr('stroke', 'var(--cds-chart-grid)');
+    const every = Math.max(1, Math.ceil(data.length / Math.max(1, Math.floor((W - left - right) / 60))));
+    const gx = svg.append('g').attr('transform', `translate(0,${H - bottom})`)
+      .call(d3.axisBottom(x).tickValues(data.map((r) => r.date).filter((_, i) => i % every === 0)).tickFormat(nightFmt).tickSize(0));
+    gx.attr('font-size', null).attr('font-family', null); gx.select('.domain').remove();
+    gx.selectAll('text').attr('dy', '1em');
+    svg.append('line').attr('x1', left).attr('x2', W - right).attr('y1', y(0)).attr('y2', y(0)).attr('stroke', 'var(--cds-chart-axis)');
+    const bw = Math.min(x.bandwidth(), 32);
+    const tipEl = document.createElement('div');
+    tipEl.className = 'nb-tip';
+    tipEl.hidden = true;
+    el.appendChild(tipEl);
+    svg.selectAll('rect.bar').data(data).join('rect').attr('class', 'bar')
+      .attr('x', (r) => x(r.date) + (x.bandwidth() - bw) / 2).attr('width', bw)
+      .attr('y', (r) => y(Math.max(0, r.profit))).attr('height', (r) => Math.max(1, Math.abs(y(r.profit) - y(0))))
+      .attr('rx', 4).attr('fill', (r) => r.profit >= 0 ? 'var(--color-ok)' : 'var(--color-bad)').attr('opacity', 0.75)
+      .on('mousemove', (e, r) => {
+        tipEl.replaceChildren();
+        const h = document.createElement('div'); h.className = 't'; h.textContent = nightFmt(r.date); tipEl.appendChild(h);
+        [['Record', r.won + '–' + r.lost], ['Night', smoney(r.profit)], ['Running total', smoney(r.cum_profit)]]
+          .forEach(([k, v]) => { const d = document.createElement('div'); d.textContent = k + ': ' + v; tipEl.appendChild(d); });
+        tipEl.hidden = false;
+        const [px, py] = d3.pointer(e, el);
+        tipEl.style.left = Math.max(0, Math.min(px + 12, el.clientWidth - tipEl.offsetWidth)) + 'px';
+        tipEl.style.top = (py + 12) + 'px';
+      })
+      .on('mouseleave', () => { tipEl.hidden = true; });
+    const cx = (r) => x(r.date) + x.bandwidth() / 2;
+    svg.append('path').attr('d', d3.line().x(cx).y((r) => y(r.cum_profit))(data)).attr('fill', 'none')
+      .attr('stroke', C[0]).attr('stroke-width', 2).attr('stroke-linejoin', 'round').attr('stroke-linecap', 'round');
+    const last = data[data.length - 1];
+    svg.append('circle').attr('cx', cx(last)).attr('cy', y(last.cum_profit)).attr('r', 4).attr('fill', C[0]);
+    svg.append('text').attr('class', 'lbl').attr('x', cx(last) + 8).attr('y', y(last.cum_profit)).attr('dy', '0.35em')
+      .text('Total ' + smoney(last.cum_profit));
+  }
+
+  // ---------- "why this grade" panel ----------
+  const sel = { best: null, totals: null, spreads: null, moneyline: null, props: null };
+  const dsOf = { totals: 'totals', spreads: 'spreads', moneyline: 'moneylines', props: 'props' };
+  const keyOf = (ds) => (ds === 'props' ? 'id' : 'game');
+  const enc = (v) => String(v).replace(/%/g, '%25').replace(/&/g, '%26').replace(/=/g, '%3D');
+  const mult = (v) => isNum(v) ? '×' + v.toFixed(3) : '—';
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function pickFor(page) {
+    return {
+      selected: sel[page] ? sel[page].rowKey : null,
+      on: (r) => {
+        sel[page] = page === 'best'
+          ? { ds: r.source, key: r.source_key, rowKey: r.id }
+          : { ds: dsOf[page], key: r[keyOf(dsOf[page])], rowKey: r[keyOf(dsOf[page])] };
+        pages[page]();
+        const card = document.getElementById('why-' + page);
+        if (!card.hidden) card.scrollIntoView({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' });
+      },
+    };
+  }
+  on.click.push(['[data-close]', (b) => {
+    const page = b.dataset.close;
+    sel[page] = null;
+    pages[page]();
+  }]);
+
+  function mark(el, ds, row, f) {
+    el.dataset.source = ds;
+    el.dataset.field = f;
+    el.dataset.where = keyOf(ds) + '=' + enc(row[keyOf(ds)]);
+    return el;
+  }
+  function val(ds, row, f, fmt) {
+    const s = mark(document.createElement('span'), ds, row, f);
+    s.textContent = fmt ? fmt(row[f], row) : (row[f] == null || row[f] === '' ? '—' : row[f]);
+    return s;
+  }
+  function ledger(ds, row, items) {
+    const box = document.createElement('div');
+    box.className = 'nb-ledger';
+    items.forEach(([label, f, fmt, sum]) => {
+      if (row[f] == null) return;
+      const d = document.createElement('div');
+      if (sum) d.className = 'sum';
+      const l = document.createElement('span');
+      l.textContent = label;
+      d.append(l, val(ds, row, f, fmt));
+      box.appendChild(d);
+    });
+    return box;
+  }
+  function step(n, title, node) {
+    const d = document.createElement('div');
+    d.className = 'nb-step';
+    const h = document.createElement('h3');
+    const num = document.createElement('span');
+    num.className = 'n';
+    num.textContent = n;
+    h.append(num, title);
+    d.append(h, node);
+    return d;
+  }
+  function teamLines(r) {
+    return [[r.home + ' offense', 'home_off_rtg', n1], [r.home + ' defense', 'home_def_rtg', n1],
+      [r.away + ' offense', 'away_off_rtg', n1], [r.away + ' defense', 'away_def_rtg', n1],
+      ['League average', 'league_rtg', n1], ['Possessions', 'pace', n1]];
+  }
+  const marginSteps = (r) => teamLines(r).concat([
+    ['Home court', 'hca_pts', sgn], ['Ratings, pace, home court', 'base_margin', sgn],
+    ['Injuries and rest', 'adj_margin', sgn], ['Calibration', 'calib_margin', sgn],
+    ['Model: ' + r.home + ' margin', 'model_margin', sgn, true]]);
+
+  const WHY = {
+    totals: (r) => [
+      step('1', "The model's total", ledger('totals', r, teamLines(r).concat([
+        ['Ratings and pace', 'base_total', n1], ['Injuries and rest', 'adj_total', sgn],
+        ['Calibration', 'calib_total', sgn], ['Model total', 'model_total', n1, true]]))),
+      step('2', "The market's total", ledger('totals', r, [
+        ['Book total', 'line', n1], ['Over odds', 'over_odds', odds], ['Under odds', 'under_odds', odds],
+        ['Over chance, margin removed', 'p_over_market', pct], ['Total the market implies', 'market_total', n1, true]])),
+      step('3', 'Priced and graded', ledger('totals', r, [
+        ['Model weight', 'model_weight', pct0], ['Priced total', 'blend_total', n1], ['Over wins', 'p_over', pct],
+        ['Under wins', 'p_under', pct], ['EV over', 'ev_over', ev], ['EV under', 'ev_under', ev],
+        ['Suggested stake', 'stake_pct', pct, true]])),
+    ],
+    spreads: (r) => [
+      step('1', "The model's margin", ledger('spreads', r, marginSteps(r))),
+      step('2', "The market's margin", ledger('spreads', r, [
+        [r.home + ' line', 'home_line', line], [r.home + ' odds', 'home_odds', odds], [r.away + ' odds', 'away_odds', odds],
+        [r.home + ' covers, margin removed', 'p_home_market', pct], ['Market: ' + r.home + ' margin', 'market_margin', sgn, true]])),
+      step('3', 'Priced and graded', ledger('spreads', r, [
+        ['Model weight', 'model_weight', pct0], ['Priced: ' + r.home + ' margin', 'blend_margin', sgn],
+        [r.home + ' covers', 'p_home', pct], [r.away + ' covers', 'p_away', pct], ['Push', 'p_push', pct],
+        ['EV ' + r.home, 'ev_home', ev], ['EV ' + r.away, 'ev_away', ev], ['Suggested stake', 'stake_pct', pct, true]])),
+    ],
+    moneylines: (r) => [
+      step('1', "The model's margin", ledger('moneylines', r, marginSteps(r))),
+      step('2', "The market's view", ledger('moneylines', r, [
+        [r.home + ' odds', 'home_ml', odds], [r.away + ' odds', 'away_ml', odds],
+        [r.home + ' wins, margin removed', 'p_home_market', pct],
+        ['Spread market: ' + r.home + ' margin', 'market_margin', sgn, true]])),
+      step('3', 'Priced and graded', ledger('moneylines', r, [
+        ['Model weight', 'model_weight', pct0], [r.home + ' wins', 'p_home', pct], [r.away + ' wins', 'p_away', pct],
+        ['Fair ' + r.home + ' odds', 'fair_home', odds], ['Fair ' + r.away + ' odds', 'fair_away', odds],
+        ['EV ' + r.home, 'ev_home', ev], ['EV ' + r.away, 'ev_away', ev], ['Suggested stake', 'stake_pct', pct, true]])),
+    ],
+    props: (r) => [
+      step('1', "The model's projection", ledger('props', r, [
+        ['Minutes', 'minutes', n1], [r.stat_label + ' per 36 min', 'rate36', n1], ['Before matchup', 'pre_matchup', n1],
+        ['Pace', 'pace_mult', mult], ['Opponent defense', 'def_mult', mult], ['Teammates out', 'usage_mult', mult]]
+        .concat(r.def_mult == null ? [['Defense and teammates out', 'matchup_mult', mult]] : [])
+        .concat([['Model projection', 'proj', n1, true]]))),
+      step('2', "The market's number", ledger('props', r, [
+        ['Line', 'line', n1], ['Over odds', 'over_odds', odds], ['Under odds', 'under_odds', odds],
+        ['Over chance, margin removed', 'p_over_market', pct], ['Number the market implies', 'market_proj', n1, true]])),
+      step('3', 'Priced and graded', ledger('props', r, [
+        ['Model weight', 'model_weight', pct0], ['Priced number', 'blend', n1], ['Over hits', 'p_over', pct],
+        ['Under hits', 'p_under', pct], ['EV over', 'ev_over', ev], ['EV under', 'ev_under', ev],
+        ['Suggested stake', 'stake_pct', pct, true]])),
+    ],
+  };
+
+  function meter(el, ds, r) {
+    el.replaceChildren();
+    el.dataset.source = ds;
+    const W = el.clientWidth;
+    if (!W) return;
+    const H = 64, y0 = 26, bh = 12, padX = 8;
+    const lean = r.lean_bar, play = r.play_bar, e = r.ev;
+    const lo = Math.min(-0.08, e - 0.01), hi = Math.max(play * 2.5, e + 0.01);
+    const x = d3.scaleLinear([lo, hi], [padX, W - padX]);
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('height', H)
+      .attr('role', 'img').attr('aria-label', 'Expected profit ' + ev(e) + ' against the lean and play bars');
+    const band = (a, b, fill, op) => svg.append('rect').attr('x', x(a)).attr('y', y0).attr('width', Math.max(0, x(b) - x(a)))
+      .attr('height', bh).attr('fill', fill).attr('opacity', op);
+    band(lo, 0, 'var(--cds-chart-muted)', 0.35);
+    band(0, lean, 'var(--cds-chart-muted)', 0.15);
+    band(lean, play, 'var(--color-fg)', 0.12);
+    band(play, hi, 'var(--color-ok)', 0.25);
+    [[0, null], [lean, 'Lean ' + pct0(lean), 'end'], [play, 'Play ' + pct0(play), 'start']].forEach(([v, label, anchor]) => {
+      svg.append('line').attr('x1', x(v)).attr('x2', x(v)).attr('y1', y0).attr('y2', y0 + bh + 4).attr('stroke', 'var(--cds-chart-axis)');
+      if (label) svg.append('text').attr('x', x(v) + (anchor === 'end' ? -3 : 3)).attr('y', y0 + bh + 16)
+        .attr('text-anchor', anchor).text(label);
+    });
+    const ex = x(Math.max(lo, Math.min(hi, e)));
+    svg.append('line').attr('x1', ex).attr('x2', ex).attr('y1', y0 - 6).attr('y2', y0 + bh + 2)
+      .attr('stroke', 'var(--color-fg)').attr('stroke-width', 2);
+    const t = svg.append('text').attr('class', 'lbl').attr('y', y0 - 10).text('This bet ' + ev(e));
+    const tw = t.node().getComputedTextLength();
+    t.attr('x', Math.max(padX, Math.min(W - padX - tw, ex - tw / 2)));
+  }
+
+  function why(page) {
+    const card = document.getElementById('why-' + page);
+    const s = sel[page];
+    const data = s && rows(s.ds);
+    const r = data && data.find((x) => String(x[keyOf(s.ds)]) === String(s.key));
+    if (!r) { card.hidden = true; return; }
+    card.hidden = false;
+    const title = document.getElementById('why-' + page + '-title');
+    const lead = s.ds === 'props' ? r.player + ' · ' + r.stat_label + ' · ' : r.game + ' · ';
+    const pill = mark(document.createElement('span'), s.ds, r, 'grade');
+    pill.className = 'pill g-' + r.grade;
+    pill.textContent = r.grade;
+    title.replaceChildren(document.createTextNode(lead), val(s.ds, r, 'pick'), pill);
+    const reason = mark(document.getElementById('why-' + page + '-reason'), s.ds, r, 'reason');
+    reason.textContent = r.reason || '—';
+    meter(document.getElementById('why-' + page + '-meter'), s.ds, r);
+    document.getElementById('why-' + page + '-steps').replaceChildren(...WHY[s.ds](r));
+    const foot = document.getElementById('why-' + page + '-foot');
+    foot.replaceChildren();
+    if (s.ds === 'props') {
+      foot.append('Last 10 games: ', val('props', r, 'l10_avg', n1), ' average, over this line in ',
+        val('props', r, 'l10_hit', pct0), ' of them. Status: ', val('props', r, 'status'), '.');
+    } else {
+      foot.append('Team ratings are ', val(s.ds, r, 'prior_share', pct0), ' player-and-coach baseline so far; the rest is this season\'s games.');
+      if (r.notes) foot.append(' Priced in: ', val(s.ds, r, 'notes'), '.');
+    }
+  }
+
+  // ---------- tabs ----------
+  const pages = { best: drawBest, totals: drawTotals, spreads: drawSpreads, moneyline: drawML, props: () => { drawProps(); drawPropCalc(); }, results: drawResults, model: drawModel };
+  let current = 'best';
+  function show(id, link) {
+    if (!pages[id]) id = 'best';
+    current = id;
+    const tpl = document.getElementById('tpl-' + id);
+    if (tpl) { document.getElementById(id).appendChild(tpl.content.cloneNode(true)); tpl.remove(); }
+    document.querySelectorAll('.nb-tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === id)));
+    document.querySelectorAll('.nb-page').forEach((p) => { p.hidden = p.id !== id; });
+    if (link) dash.setLink(id);
+    pages[id]();
+  }
+  document.querySelectorAll('.nb-tab').forEach((t) => t.addEventListener('click', () => show(t.dataset.tab, true)));
+  const start = location.hash.slice(1);
+  show(pages[start] ? start : 'best', false);
+
+  dash.onData(() => {
+    drawHeader();
+    pages[current]();
+  });
+})();
+</script>
+
+</div>
+</body>
+</html>
